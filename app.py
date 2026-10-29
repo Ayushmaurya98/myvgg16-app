@@ -1,32 +1,31 @@
-streamlit
-tensorflow-cpu
-pillow
-numpy
-
 import streamlit as st
 import numpy as np
 from PIL import Image
 import tensorflow as tf
-from tensorflow.keras.applications.vgg16 import preprocess_input, decode_predictions
+from tensorflow.keras.applications.vgg16 import preprocess_input
 
 # 1. Page Configuration
 st.set_page_config(
-    page_title="VGG16 Image Classifier", 
-    page_icon="🖼️", 
+    page_title="Cat vs Dog Classifier", 
+    page_icon="🐱🐶", 
     layout="centered"
 )
 
-st.title("🖼️ VGG16 Image Classifier")
-st.write("Upload any image (JPG, JPEG, PNG) to see what the VGG16 Deep Learning model detects.")
+st.title("🐱🐶 Cat vs Dog VGG16 Classifier")
+st.write("Upload an image to see if the model detects a Cat or a Dog.")
 
-# 2. Cache the Model to prevent memory leaks and reloading overhead
+# 2. Cache the Custom Model
 @st.cache_resource
 def load_vgg16_model():
-    # Swap out for tf.keras.models.load_model('your_model.h5') if using a custom model file.
-    return tf.keras.applications.VGG16('model_vgg16.h5')
+    # Make sure 'model.h5' is pasted in the same folder as this app.py file
+    return tf.keras.models.load_model('model_vgg16.h5')
 
-with st.spinner("Loading VGG16 Architecture into memory..."):
-    model = load_vgg16_model()
+with st.spinner("Loading your custom VGG16 model into memory..."):
+    try:
+        model = load_vgg16_model()
+    except Exception as e:
+        st.error(f"Could not load 'model.h5'. Make sure the file is uploaded to GitHub in the same folder. Error: {e}")
+        st.stop()
 
 # 3. Image Preprocessing Pipeline
 def preprocess_image(uploaded_file):
@@ -53,27 +52,38 @@ if uploaded_file is not None:
     display_img, processed_img = preprocess_image(uploaded_file)
     
     # Create two columns layout
-    col1, col2 = st.columns([1, 1])
+    col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Your Image")
         st.image(display_img, use_container_width=True)
         
     with col2:
-        st.subheader("Top Predictions")
+        st.subheader("Prediction Result")
         with st.spinner("Running inference..."):
             # Execute Model Prediction
             predictions = model.predict(processed_img)
             
-            # Decode the top 3 prediction probabilities
-            decoded_results = decode_predictions(predictions, top=3)[0]
+            # --- CUSTOM CAT AND DOG MAPPING ---
+            # Define your classes exactly in the order your model outputs them.
+            # Usually index 0 is Cat and index 1 is Dog, or vice versa.
+            CLASS_NAMES = ['Cat', 'Dog'] 
             
-            # Render predictions dynamically with progress bars
-            for index, (imagenet_id, label, prob) in enumerate(decoded_results):
-                # Clean up ImageNet labels (e.g., 'golden_retriever' -> 'Golden Retriever')
-                formatted_label = label.replace('_', ' ').title()
-                percentage = prob * 100
-                
-                st.write(f"**{index + 1}. {formatted_label}**")
-                st.progress(float(prob))
-                st.caption(f"Confidence score: {percentage:.2f}%")
+            # If your model outputs a single probability value (Binary/Sigmoid)
+            if predictions.shape[-1] == 1:
+                prob = predictions[0][0]
+                if prob > 0.5:
+                    result_label = "Dog"
+                    confidence = prob * 100
+                else:
+                    result_label = "Cat"
+                    confidence = (1 - prob) * 100
+            # If your model outputs two probability values (Softmax)
+            else:
+                predicted_class_idx = np.argmax(predictions[0])
+                result_label = CLASS_NAMES[predicted_class_idx]
+                confidence = predictions[0][predicted_class_idx] * 100
+            
+            # Display output nicely
+            st.success(f"Detected: **{result_label}**")
+            st.metric(label="Confidence", value=f"{confidence:.2f}%")
